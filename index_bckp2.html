@@ -49,8 +49,6 @@ header{
   background:var(--bench-hi);border:1px solid var(--line);border-radius:2px;
   padding:8px 11px;cursor:pointer;font-size:12px;min-height:36px;
 }
-.iconbtn:disabled{opacity:.32;cursor:default}
-#undoBtn,#redoBtn{font-size:15px;padding:6px 10px;min-width:38px}
 
 main{flex:1;display:flex;min-height:0}
 .stage{
@@ -207,8 +205,6 @@ input[type=color]{width:100%;height:38px;padding:2px;background:#191315;border:1
     <button data-mode="edit" aria-pressed="true">Edit photo</button>
     <button data-mode="design" aria-pressed="false">Create post</button>
   </div>
-  <button class="iconbtn" id="undoBtn" title="Undo" aria-label="Undo" disabled>↶</button>
-  <button class="iconbtn" id="redoBtn" title="Redo" aria-label="Redo" disabled>↷</button>
   <button class="iconbtn" id="openBtn">Photo</button>
 </header>
 
@@ -248,20 +244,6 @@ input[type=color]{width:100%;height:38px;padding:2px;background:#191315;border:1
     <div class="panels" id="panels">
       <!-- ===== EDIT ===== -->
       <div class="panel on" data-panel="frame" data-mode="edit">
-        <div id="cropPanel" hidden>
-          <div class="grp"><div class="lbl">Straighten</div>
-            <div class="slider">
-              <div class="row"><span class="name">Angle</span><span class="val" id="strVal">0.0°</span></div>
-              <input type="range" id="straight" min="-15" max="15" step="0.1" value="0"></div>
-            <button class="btn sm wide" id="strZero">Level it</button></div>
-          <div class="grp"><div class="lbl">Lock the crop to</div><div class="chips" id="cropLocks"></div></div>
-          <div class="two"><button class="btn" id="cropCancel">Cancel</button>
-            <button class="btn go" id="cropApply">Apply crop</button></div>
-          <p class="hint" style="margin-top:10px">Drag the corners to set the crop. Drag inside to move it.</p>
-        </div>
-        <div id="framePanel">
-        <div class="grp"><button class="btn go wide" id="cropOpen">Crop &amp; straighten</button>
-          <button class="btn sm wide" id="cropClear" style="margin-top:8px" hidden>Clear the crop</button></div>
         <div class="grp"><div class="lbl">Shape</div><div class="chips" id="ratios"></div></div>
         <div class="grp"><div class="lbl">How the photo sits</div>
           <div class="chips">
@@ -286,11 +268,6 @@ input[type=color]{width:100%;height:38px;padding:2px;background:#191315;border:1
             <button class="chip" id="flipH">Mirror</button>
             <button class="chip" id="resetBtn">Reset edits</button>
           </div></div>
-        <div class="grp"><div class="lbl">Carousel</div>
-          <div class="chips" id="slideChips"></div>
-          <p class="hint" style="margin-top:8px">Spread one photo across several slides. Post them in order
-          and they line up edge to edge.</p></div>
-        </div>
       </div>
 
       <div class="panel" data-panel="grade" data-mode="edit">
@@ -398,32 +375,6 @@ function roundRect(g,x,y,w,h,r){
   g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
   g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
 }
-const HAS_FILTER=(()=>{
-  try{
-    const c=document.createElement("canvas"); c.width=c.height=2;
-    const g=c.getContext("2d");
-    if(!("filter" in g))return false;
-    g.fillStyle="#808080"; g.filter="brightness(2)"; g.fillRect(0,0,2,2); g.filter="none";
-    return g.getImageData(0,0,1,1).data[0]>200;
-  }catch(e){ return false; }
-})();
-// bounce through a small canvas: a usable blur where ctx.filter is missing
-function blurDraw(g,img,dx,dy,dw,dh,px){
-  const k=Math.max(2,Math.min(60,Math.round(px*1.5)));
-  const tw=Math.max(2,Math.round(Math.abs(dw)/k)), th=Math.max(2,Math.round(Math.abs(dh)/k));
-  const t=document.createElement("canvas"); t.width=tw; t.height=th;
-  const tg=t.getContext("2d"); tg.imageSmoothingEnabled=true;
-  tg.drawImage(img,0,0,tw,th);
-  const s=g.imageSmoothingEnabled; g.imageSmoothingEnabled=true;
-  g.drawImage(t,dx,dy,dw,dh); g.imageSmoothingEnabled=s;
-}
-let _sc=null;
-function scratch(w,h){
-  if(!_sc)_sc=document.createElement("canvas");
-  _sc.width=w; _sc.height=h;
-  const g=_sc.getContext("2d"); g.clearRect(0,0,w,h);
-  return _sc;
-}
 const noiseCache=new Map();
 function noise(w,h){
   const key=w+"x"+h; if(noiseCache.has(key))return noiseCache.get(key);
@@ -451,9 +402,9 @@ function grainPass(g,amt,W,H){
 function coverDraw(g,img,x,y,w,h,zoom,px,py,fstr){
   const s=Math.max(w/img.width,h/img.height)*(zoom||1);
   const dw=img.width*s, dh=img.height*s;
-  if(fstr&&HAS_FILTER)g.filter=fstr;
+  if(fstr)g.filter=fstr;
   g.drawImage(img, x+w/2-dw/2+(px||0)*w, y+h/2-dh/2+(py||0)*h, dw, dh);
-  if(fstr&&HAS_FILTER)g.filter="none";
+  g.filter="none";
 }
 let MAXAREA=null;
 function maxCanvasArea(){
@@ -480,12 +431,15 @@ function capDims(w,h){
 }
 function eNativeLong(){
   if(!ORIENT)return 1080;
-  const s=srcRect(), n=E.slides||1;
-  const ar=eAspect()*n, iw=s.sw, ih=s.sh;
+  const r=RATIOS.find(r=>r.id===E.ratio);
+  let aw=r.w||1, ah=r.h||1;
+  if(r.id==="orig"){aw=ORIENT.width;ah=ORIENT.height;}
+  const ar=aw/ah, iw=ORIENT.width, ih=ORIENT.height;
+  // frame width at which the photo is sampled 1:1 from the source
   const need = E.fit==="fill" ? Math.max(1/iw, 1/(ar*ih)) : Math.min(1/iw, 1/(ar*ih));
   let W=1/(E.zoom*need), H=W/ar;
   const c=capDims(W,H);
-  return Math.max(1080,Math.round(c.w/n),c.h);
+  return Math.max(1080,c.w,c.h);
 }
 function dNativeLong(){
   const [a,b]=dRatio().split(":").map(Number), ar=a/b;
@@ -503,39 +457,15 @@ function dNativeLong(){
 function eLong(){ return E.size==="max" ? eNativeLong() : E.size; }
 function dLong(){ return D.size==="max" ? dNativeLong() : D.size; }
 async function toBlob(c,fmt,q){return new Promise(r=>c.toBlob(r,fmt==="png"?"image/png":"image/jpeg",q));}
-function sliceSlides(canvas,n){
-  if(n<2)return [canvas];
-  const out=[], w=Math.round(canvas.width/n);
-  for(let i=0;i<n;i++){
-    const c=document.createElement("canvas"); c.width=w; c.height=canvas.height;
-    c.getContext("2d").drawImage(canvas,i*w,0,w,canvas.height,0,0,w,canvas.height);
-    out.push(c);
+async function deliver(canvas,name,fmt,q,noteEl){
+  const blob=await toBlob(canvas,fmt,q);
+  const file=new File([blob],name+"."+(fmt==="png"?"png":"jpg"),{type:blob.type});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); noteEl.textContent="Shared."; return; }catch(e){ if(e.name==="AbortError"){noteEl.textContent="";return;} }
   }
-  return out;
-}
-async function deliver(canvas,name,fmt,q,noteEl,slides){
-  const n=slides||1;
-  const parts=sliceSlides(canvas,n);
-  const files=[];
-  for(let i=0;i<parts.length;i++){
-    const blob=await toBlob(parts[i],fmt,q);
-    const fn=name+(n>1?"-"+(i+1):"")+"."+(fmt==="png"?"png":"jpg");
-    files.push(new File([blob],fn,{type:blob.type}));
-  }
-  if(navigator.canShare && navigator.canShare({files})){
-    try{ await navigator.share({files}); noteEl.textContent=n>1?n+" slides shared, in order.":"Shared."; return; }
-    catch(e){ if(e.name==="AbortError"){noteEl.textContent="";return;} }
-  }
-  let total=0;
-  for(const f of files){
-    total+=f.size;
-    const a=document.createElement("a"); a.href=URL.createObjectURL(f); a.download=f.name; a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),6000);
-    await new Promise(r=>setTimeout(r,320));
-  }
-  noteEl.textContent=n>1
-    ? `${n} slides at ${parts[0].width}×${parts[0].height}, ${(total/1024).toFixed(0)} KB total.`
-    : `${canvas.width}×${canvas.height}, ${(total/1024).toFixed(0)} KB.`;
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=file.name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  noteEl.textContent=`${canvas.width}×${canvas.height}, ${(blob.size/1024).toFixed(0)} KB.`;
 }
 
 /* ============================================================ EDIT MODE */
@@ -557,57 +487,6 @@ function buildLUT(p){
   }
   if(lutCache.size>40)lutCache.clear();
   lutCache.set(p.id,L); return L;
-}
-function adjLUT(adj){
-  const key="m"+adj.exposure+"_"+adj.contrast;
-  if(lutCache.has(key))return lutCache.get(key);
-  const L=new Uint8ClampedArray(256);
-  const b=1+adj.exposure/100, c=adj.contrast/100;
-  for(let i=0;i<256;i++){
-    let v=i/255*b;
-    if(c) v=v+c*(v-.5)*(1-Math.abs(v-.5)*1.15);
-    L[i]=Math.max(0,Math.min(1,v))*255;
-  }
-  if(lutCache.size>60)lutCache.clear();
-  lutCache.set(key,L); return L;
-}
-function needsPixels(adj,film){
-  return !!(film || (adj && (adj.exposure||adj.contrast||adj.saturation)));
-}
-/* One pass over the pixels: manual exposure/contrast/saturation first, then the
-   film profile. Done in JS rather than ctx.filter so it behaves the same on every
-   browser (Safari only shipped canvas filters in 17). */
-function pixelPass(g,W,H,adj,film,amt){
-  const useA=!!(adj&&(adj.exposure||adj.contrast||adj.saturation));
-  const t=film?Math.max(0,Math.min(1,(amt===undefined?100:amt)/100)):0;
-  if(!useA&&t<=0)return;
-  let id; try{ id=g.getImageData(0,0,W,H); }catch(e){ return; }
-  const d=id.data;
-  const A=useA?adjLUT(adj):null, aSat=useA?1+adj.saturation/100:1;
-  const F=t>0?buildLUT(film):null;
-  const sh=(t>0&&film.shadow)?hexRGB(film.shadow[0]):null, shA=(t>0&&film.shadow)?film.shadow[1]:0;
-  const hi=(t>0&&film.high)?hexRGB(film.high[0]):null, hiA=(t>0&&film.high)?film.high[1]:0;
-  const fSat=(t>0&&film.sat!==undefined)?film.sat:1;
-  for(let i=0;i<d.length;i+=4){
-    if(d[i+3]===0)continue;
-    let r=d[i],gg=d[i+1],b=d[i+2];
-    if(A){
-      r=A[r]; gg=A[gg]; b=A[b];
-      if(aSat!==1){const l=.2126*r+.7152*gg+.0722*b;r=l+(r-l)*aSat;gg=l+(gg-l)*aSat;b=l+(b-l)*aSat;}
-      r=r<0?0:r>255?255:r; gg=gg<0?0:gg>255?255:gg; b=b<0?0:b>255?255:b;
-    }
-    if(F){
-      const r0=r,g0=gg,b0=b;
-      let fr=F[0][r|0],fg=F[1][gg|0],fb=F[2][b|0];
-      const lum=(.2126*fr+.7152*fg+.0722*fb)/255;
-      if(fSat!==1){const l=lum*255;fr=l+(fr-l)*fSat;fg=l+(fg-l)*fSat;fb=l+(fb-l)*fSat;}
-      if(shA){const w=(1-lum)*(1-lum)*shA;fr+=(sh[0]-fr)*w;fg+=(sh[1]-fg)*w;fb+=(sh[2]-fb)*w;}
-      if(hiA){const w=lum*lum*hiA;fr+=(hi[0]-fr)*w;fg+=(hi[1]-fg)*w;fb+=(hi[2]-fb)*w;}
-      r=r0+(fr-r0)*t; gg=g0+(fg-g0)*t; b=b0+(fb-b0)*t;
-    }
-    d[i]=r; d[i+1]=gg; d[i+2]=b;
-  }
-  g.putImageData(id,0,0);
 }
 function filmPass(g,W,H,p,amt){
   const t=Math.max(0,Math.min(1,amt/100)); if(!p||t<=0)return;
@@ -662,8 +541,7 @@ const FILM=[
 const RATIOS=[
   {id:"1:1",label:"Square 1:1",w:1,h:1},{id:"4:5",label:"Portrait 4:5",w:4,h:5},
   {id:"9:16",label:"Story 9:16",w:9,h:16},{id:"1.91:1",label:"Wide 1.91:1",w:1.91,h:1},
-  {id:"3:4",label:"Classic 3:4",w:3,h:4},{id:"orig",label:"As shot",w:0,h:0},
-  {id:"free",label:"Cropped",w:0,h:0}
+  {id:"3:4",label:"Classic 3:4",w:3,h:4},{id:"orig",label:"As shot",w:0,h:0}
 ];
 const ADJ=[
   {k:"exposure",n:"Exposure",min:-60,max:60,def:0},{k:"contrast",n:"Contrast",min:-60,max:60,def:0},
@@ -681,47 +559,20 @@ const LOOKS={
   "Mono":{saturation:-100,contrast:22,grain:26},
   "Sun bleach":{exposure:12,warmth:22,fade:20,saturation:-6,vignette:14}
 };
-const E={film:null,filmAmt:100,crop:null,straight:0,slides:1,ratio:"4:5",fit:"fill",bg:"blur",bgColor:"#ffffff",zoom:1,panX:0,panY:0,
+const E={film:null,filmAmt:100,ratio:"4:5",fit:"fill",bg:"blur",bgColor:"#ffffff",zoom:1,panX:0,panY:0,
   adj:Object.fromEntries(ADJ.map(a=>[a.k,a.def])),layers:[],sel:-1,size:1080,fmt:"jpeg",q:92,rot:0,flip:false};
 
-let STRAIGHT=null, STRAIGHT_KEY=null;
-function WORK(){
-  if(!ORIENT)return null;
-  if(!E.straight)return ORIENT;
-  const key=ORIENT.width+"x"+ORIENT.height+"@"+E.straight;
-  if(STRAIGHT_KEY===key)return STRAIGHT;
-  const w=ORIENT.width,h=ORIENT.height;
-  const c=document.createElement("canvas"); c.width=w; c.height=h;
-  const g=c.getContext("2d");
-  const rad=E.straight*Math.PI/180, co=Math.abs(Math.cos(rad)), si=Math.abs(Math.sin(rad));
-  const sc=Math.max((w*co+h*si)/w,(w*si+h*co)/h);
-  g.translate(w/2,h/2); g.rotate(rad); g.scale(sc,sc);
-  g.drawImage(ORIENT,-w/2,-h/2);
-  STRAIGHT=c; STRAIGHT_KEY=key; return c;
-}
-function srcRect(){
-  const im=WORK(); const c=E.crop||{x:0,y:0,w:1,h:1};
-  return {im, sx:c.x*im.width, sy:c.y*im.height, sw:c.w*im.width, sh:c.h*im.height};
-}
-function eAspect(){
-  const s=srcRect();
-  if(E.ratio==="free"||E.ratio==="orig")return s.sw/s.sh;
-  const r=RATIOS.find(r=>r.id===E.ratio);
-  return (r.w||1)/(r.h||1);
-}
-function slideDims(long){
-  const ar=eAspect();
-  return ar>=1?{w:Math.round(long),h:Math.round(long/ar)}:{w:Math.round(long*ar),h:Math.round(long)};
-}
 function eDims(long){
-  const s=slideDims(long);
-  return {w:s.w*(E.slides||1), h:s.h};
+  const r=RATIOS.find(r=>r.id===E.ratio);
+  let aw=r.w||1, ah=r.h||1;
+  if(r.id==="orig"&&ORIENT){aw=ORIENT.width;ah=ORIENT.height;}
+  return aw>=ah?{w:Math.round(long),h:Math.round(long*ah/aw)}:{w:Math.round(long*aw/ah),h:Math.round(long)};
 }
 function ePlace(W,H){
-  const r=srcRect();
-  const base=E.fit==="fill"?Math.max(W/r.sw,H/r.sh):Math.min(W/r.sw,H/r.sh);
-  const s=base*E.zoom,dw=r.sw*s,dh=r.sh*s;
-  return {dx:W/2+E.panX*W-dw/2,dy:H/2+E.panY*H-dh/2,dw,dh,r};
+  const iw=ORIENT.width,ih=ORIENT.height;
+  const base=E.fit==="fill"?Math.max(W/iw,H/ih):Math.min(W/iw,H/ih);
+  const s=base*E.zoom,dw=iw*s,dh=ih*s;
+  return {dx:W/2+E.panX*W-dw/2,dy:H/2+E.panY*H-dh/2,dw,dh};
 }
 function eRender(c,W,H){
   const g=c.getContext("2d");
@@ -731,34 +582,16 @@ function eRender(c,W,H){
   const p=ePlace(W,H);
   if(p.dx>.5||p.dy>.5||p.dw<W-.5||p.dh<H-.5){
     if(E.bg==="blur"){
-      const _r=srcRect();
-      const cs=Math.max(W/_r.sw,H/_r.sh)*1.14, bw=_r.sw*cs, bh=_r.sh*cs;
-      if(HAS_FILTER){
-        g.filter=`blur(${Math.max(8,W*.05)}px) brightness(.82) saturate(1.1)`;
-        g.drawImage(_r.im,_r.sx,_r.sy,_r.sw,_r.sh,(W-bw)/2,(H-bh)/2,bw,bh); g.filter="none";
-      } else {
-        blurDraw(g,_r.im,(W-bw)/2,(H-bh)/2,bw,bh,Math.max(8,W*.05));
-        g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(0,0,W,H);
-      }
+      const cs=Math.max(W/ORIENT.width,H/ORIENT.height)*1.14, bw=ORIENT.width*cs, bh=ORIENT.height*cs;
+      g.filter=`blur(${Math.max(8,W*.05)}px) brightness(.82) saturate(1.1)`;
+      g.drawImage(ORIENT,(W-bw)/2,(H-bh)/2,bw,bh); g.filter="none";
     } else { g.fillStyle=E.bgColor; g.fillRect(0,0,W,H); }
   }
   const soft=E.adj.sharpBg/100*(W*.012);
-  const paintPhoto=(dst)=>{
-    const r=p.r;
-    if(soft>.2){
-      if(HAS_FILTER){ dst.filter=`blur(${soft.toFixed(2)}px)`;
-        dst.drawImage(r.im,r.sx,r.sy,r.sw,r.sh,p.dx,p.dy,p.dw,p.dh); dst.filter="none"; }
-      else blurDraw(dst,r.im,p.dx,p.dy,p.dw,p.dh,soft);
-    } else dst.drawImage(r.im,r.sx,r.sy,r.sw,r.sh,p.dx,p.dy,p.dw,p.dh);
-  };
-  if(needsPixels(E.adj,E.film)){
-    // grade the photo on its own layer so the backdrop keeps its colour
-    const tc=scratch(W,H), tg=tc.getContext("2d");
-    paintPhoto(tg);
-    pixelPass(tg,W,H,E.adj,E.film,E.filmAmt);
-    g.drawImage(tc,0,0);
-  } else paintPhoto(g);
+  g.filter=filt(E.adj)+(soft>.2?` blur(${soft.toFixed(2)}px)`:"");
+  g.drawImage(ORIENT,p.dx,p.dy,p.dw,p.dh); g.filter="none";
   warmthPass(g,E.adj,W,H);
+  if(E.film) filmPass(g,W,H,E.film,E.filmAmt);
   if(E.adj.fade>0){
     const v=Math.round(E.adj.fade/100*52);
     g.globalCompositeOperation="lighten"; g.fillStyle=`rgb(${v},${Math.max(0,v-2)},${v+4})`;
@@ -771,12 +604,6 @@ function eRender(c,W,H){
   }
   grainPass(g,E.adj.grain,W,H);
   for(const L of E.layers) eDrawText(g,L,W,H);
-  if(E.slides>1&&c===frame){
-    g.save(); g.strokeStyle="rgba(255,255,255,.85)"; g.lineWidth=Math.max(1,W*.002);
-    g.setLineDash([W*.012,W*.012]);
-    for(let i=1;i<E.slides;i++){const x=W/E.slides*i;g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
-    g.restore();
-  }
 }
 function eDrawText(g,L,W,H){
   const size=L.size/100*H;
@@ -1124,7 +951,7 @@ function loadTemplate(i){
   D.layers=JSON.parse(JSON.stringify(T.L));
   let n=0; D.layers.forEach(l=>{ if(l.t==="photo"){ if(l.src===undefined) l.src=n; n++; } });
   D.sel=-1;
-  syncPalette(); dRenderLayers(); dDraw(); pushHistory();
+  syncPalette(); dRenderLayers(); dDraw();
 }
 function wrapLines(g,text,maxW){
   const out=[];
@@ -1184,15 +1011,7 @@ function dDrawLayer(g,L,W,H){
     } else if(L.shape==="round"&&L.r){roundRect(g,x,y,w,h,L.r*W);g.clip();}
     else {g.beginPath();g.rect(x,y,w,h);g.clip();}
     const im=slotImg(L);
-    if(im&&needsPixels(D.adj,null)){
-      const sw=Math.max(2,Math.round(w)), sh=Math.max(2,Math.round(h));
-      const tc=document.createElement("canvas"); tc.width=sw; tc.height=sh;
-      const tg=tc.getContext("2d");
-      coverDraw(tg,im,0,0,sw,sh,L.zoom,L.px,L.py,null);
-      pixelPass(tg,sw,sh,D.adj,null,0);
-      g.drawImage(tc,x,y,w,h);
-    }
-    else if(im) coverDraw(g,im,x,y,w,h,L.zoom,L.px,L.py,null);
+    if(im) coverDraw(g,im,x,y,w,h,L.zoom,L.px,L.py,filt(D.adj));
     else {
       g.fillStyle=col("@accent2"); g.globalAlpha=.35; g.fillRect(x,y,w,h); g.globalAlpha=1;
       g.strokeStyle=col("@ink"); g.globalAlpha=.5; g.lineWidth=Math.max(1,W*.004);
@@ -1255,64 +1074,6 @@ function dBox(L,W,H){
   return {x:L.x*W,y:L.y*H,w:(L.w||0)*W,h:(L.h||0)*H};
 }
 
-/* ---------- crop mode ---------- */
-const CROP={on:false,rect:null,lock:null,before:null};
-function cropStart(){
-  if(!ORIENT)return;
-  CROP.before=JSON.stringify({crop:E.crop,straight:E.straight,ratio:E.ratio,zoom:E.zoom,panX:E.panX,panY:E.panY});
-  CROP.rect=E.crop?{...E.crop}:{x:.05,y:.05,w:.9,h:.9};
-  CROP.on=true;
-  $("#cropPanel").hidden=false; $("#framePanel").hidden=true;
-  gotoTab("frame"); eDraw();
-}
-function cropEnd(apply){
-  if(apply){
-    E.crop={...CROP.rect};
-    if(CROP.lock) E.ratio=CROP.lock; else E.ratio="free";
-    E.zoom=1; E.panX=0; E.panY=0;
-    $("#zoom").value=1; $("#zoomVal").textContent="1.00×";
-    press($("#ratios"),"ratio",E.ratio);
-  } else {
-    const b=JSON.parse(CROP.before);
-    E.crop=b.crop; E.straight=b.straight; E.ratio=b.ratio; E.zoom=b.zoom; E.panX=b.panX; E.panY=b.panY;
-    $("#straight").value=E.straight; $("#strVal").textContent=E.straight.toFixed(1)+"°";
-    press($("#ratios"),"ratio",E.ratio);
-  }
-  CROP.on=false;
-  $("#cropPanel").hidden=true; $("#framePanel").hidden=false;
-  $("#cropClear").hidden=!E.crop;
-  if(apply)pushHistory();
-  eDraw();
-}
-function cropRender(c,W,H){
-  const g=c.getContext("2d"), im=WORK();
-  g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,W,H);
-  g.fillStyle="#000"; g.fillRect(0,0,W,H);
-  g.drawImage(im,0,0,W,H);
-  const r=CROP.rect, x=r.x*W, y=r.y*H, w=r.w*W, hh=r.h*H;
-  g.fillStyle="rgba(0,0,0,.62)";
-  g.fillRect(0,0,W,y); g.fillRect(0,y+hh,W,H-y-hh);
-  g.fillRect(0,y,x,hh); g.fillRect(x+w,y,W-x-w,hh);
-  g.strokeStyle="rgba(255,255,255,.32)"; g.lineWidth=Math.max(1,W*.0018);
-  for(let i=1;i<3;i++){
-    g.beginPath(); g.moveTo(x+w/3*i,y); g.lineTo(x+w/3*i,y+hh); g.stroke();
-    g.beginPath(); g.moveTo(x,y+hh/3*i); g.lineTo(x+w,y+hh/3*i); g.stroke();
-  }
-  g.strokeStyle="#fff"; g.lineWidth=Math.max(1.5,W*.003); g.strokeRect(x,y,w,hh);
-  const L=Math.min(w,hh)*.22, T=Math.max(3,W*.008);
-  g.lineWidth=T; g.lineCap="square";
-  [[x,y,1,1],[x+w,y,-1,1],[x,y+hh,1,-1],[x+w,y+hh,-1,-1]].forEach(([px,py,sx,sy])=>{
-    g.beginPath(); g.moveTo(px+sx*L,py); g.lineTo(px,py); g.lineTo(px,py+sy*L); g.stroke();
-  });
-}
-function cropHandle(px,py,W,H){
-  const r=CROP.rect, m=Math.max(W,H)*.06;
-  const cx=[r.x*W,(r.x+r.w)*W], cy=[r.y*H,(r.y+r.h)*H];
-  for(let i=0;i<2;i++)for(let j=0;j<2;j++)
-    if(Math.abs(px-cx[i])<m&&Math.abs(py-cy[j])<m)return {cx:i,cy:j};
-  if(px>r.x*W&&px<(r.x+r.w)*W&&py>r.y*H&&py<(r.y+r.h)*H)return {move:true};
-  return null;
-}
 /* ============================================================ canvas sizing */
 function activeCanvas(){return MODE==="edit"?frame:designC;}
 function fitCanvas(c,t){
@@ -1322,27 +1083,16 @@ function fitCanvas(c,t){
   const sc=Math.min(availW/t.w,availH/t.h,1);
   const cw=Math.round(t.w*sc), ch=Math.round(t.h*sc);
   // the film pass is per-pixel, so drop the preview to 1x while a profile is on
-  const heavy=(MODE==="edit")?needsPixels(E.adj,E.film):needsPixels(D.adj,null);
-  const dpr=heavy?1:Math.min(2,window.devicePixelRatio||1);
+  const dpr=(MODE==="edit"&&E.film)?1:Math.min(2,window.devicePixelRatio||1);
   c.style.width=cw+"px"; c.style.height=ch+"px";
   c.width=Math.round(cw*dpr); c.height=Math.round(ch*dpr);
 }
 function eDraw(){
   if(!ORIENT)return;
-  if(CROP.on){
-    const im=WORK();
-    fitCanvas(frame,{w:im.width,h:im.height});
-    cropRender(frame,frame.width,frame.height);
-    $("#readout").innerHTML=`crop <b>${Math.round(CROP.rect.w*im.width)}×${Math.round(CROP.rect.h*im.height)}</b> · straighten <b>${E.straight.toFixed(1)}°</b>`;
-    return;
-  }
   const t=eDims(eLong()); fitCanvas(frame,t); eRender(frame,frame.width,frame.height);
   $("#readout").innerHTML=`frame <b>${t.w}×${t.h}</b> · source <b>${ORIENT.width}×${ORIENT.height}</b> · zoom <b>${E.zoom.toFixed(2)}×</b>`;
-  const n=E.slides||1, sw=Math.round(t.w/n);
-  $("#eOut").textContent=(n>1
-      ? `${n} slides of ${sw} × ${t.h} each`
-      : `Output ${t.w} × ${t.h} (${(t.w*t.h/1e6).toFixed(1)} MP)`)
-    +` · source ${ORIENT.width} × ${ORIENT.height}`
+  const px=(t.w*t.h/1e6).toFixed(1);
+  $("#eOut").textContent=`Output ${t.w} × ${t.h} (${px} MP) · source ${ORIENT.width} × ${ORIENT.height}`
     +(E.size==="max"?" · sampled 1:1 from the original":"");
 }
 function dDraw(){
@@ -1363,7 +1113,7 @@ function orient(){
   const g=c.getContext("2d");
   g.translate(w/2,h/2); g.rotate(E.rot*Math.PI/180); if(E.flip)g.scale(-1,1);
   g.drawImage(s,-s.width/2,-s.height/2);
-  ORIENT=c; STRAIGHT_KEY=null;
+  ORIENT=c;
 }
 function loadFile(file){
   if(!file||!file.type.startsWith("image/")){$("#saveNote").textContent="That file isn't an image.";return;}
@@ -1374,8 +1124,7 @@ function loadFile(file){
     const base=(file.name||"post").replace(/\.[^.]+$/,"").slice(0,50)||"post";
     $("#fname").value=base; $("#dfname").value=base+"-design";
     $("#zoom").value=1; $("#zoomVal").textContent="1.00×";
-    PHOTOS[0]=img; E.crop=null; E.straight=0; STRAIGHT_KEY=null;
-    HIST.edit={s:[],i:-1}; draw(); buildGrid(); pushHistory();
+    PHOTOS[0]=img; draw(); buildGrid();
   };
   img.src=URL.createObjectURL(file);
 }
@@ -1386,9 +1135,7 @@ RATIOS.forEach(r=>{
   const b=document.createElement("button");
   b.className="chip"; b.textContent=r.label; b.dataset.ratio=r.id;
   b.setAttribute("aria-pressed",r.id===E.ratio);
-  b.onclick=()=>{
-    if(r.id==="free"&&!E.crop){cropStart();return;}
-    E.ratio=r.id;press(ratioBox,"ratio",r.id);pushHistory();eDraw();};
+  b.onclick=()=>{E.ratio=r.id;press(ratioBox,"ratio",r.id);eDraw();};
   ratioBox.appendChild(b);
 });
 const sliderBox=$("#sliders");
@@ -1406,7 +1153,7 @@ Object.keys(LOOKS).forEach(name=>{
   b.onclick=()=>{ADJ.forEach(a=>E.adj[a.k]=a.def);Object.assign(E.adj,LOOKS[name]);
     E.film=null; $("#amtGrp").hidden=true;
     document.querySelectorAll("#filmGroups .chip").forEach(x=>x.setAttribute("aria-pressed","false"));
-    [...lookBox.children].forEach(c=>c.setAttribute("aria-pressed",c===b));pushAdj();pushHistory();eDraw();};
+    [...lookBox.children].forEach(c=>c.setAttribute("aria-pressed",c===b));pushAdj();eDraw();};
   lookBox.appendChild(b);
 });
 const filmHost=$("#filmGroups"); const filmBtns=[];
@@ -1423,7 +1170,7 @@ const filmHost=$("#filmGroups"); const filmBtns=[];
       Object.assign(E.adj,f.sug||{});
       filmBtns.forEach(x=>x.setAttribute("aria-pressed",x===b));
       [...lookBox.children].forEach(c=>c.setAttribute("aria-pressed","false"));
-      $("#amtGrp").hidden=false; pushAdj(); pushHistory(); eDraw();
+      $("#amtGrp").hidden=false; pushAdj(); eDraw();
     };
     chips.appendChild(b);
   });
@@ -1436,73 +1183,33 @@ $("#filmAmt").oninput=e=>{E.filmAmt=+e.target.value;$("#amtVal").textContent=e.t
   [[1080,"1080 px"],[1350,"1350 px"],[2048,"2048 px"],["max","Full quality"]].forEach(([v,label])=>{
     const b=document.createElement("button"); b.className="chip mono"; b.textContent=label; b.dataset.size=String(v);
     b.setAttribute("aria-pressed",v===get());
-    b.onclick=()=>{set(v);press(box,"size",String(v));pushHistory();};
+    b.onclick=()=>{set(v);press(box,"size",String(v));};
     box.appendChild(b);
   });
 });
 function press(box,key,val){[...box.children].forEach(c=>c.setAttribute("aria-pressed",c.dataset[key]===val));}
 
-$$('[data-fit]').forEach(b=>b.onclick=()=>{E.fit=b.dataset.fit;$$('[data-fit]').forEach(x=>x.setAttribute("aria-pressed",x===b));pushHistory();eDraw();});
-$$('[data-bg]').forEach(b=>b.onclick=()=>{E.bg=b.dataset.bg;$$('[data-bg]').forEach(x=>x.setAttribute("aria-pressed",x===b));pushHistory();eDraw();});
+$$('[data-fit]').forEach(b=>b.onclick=()=>{E.fit=b.dataset.fit;$$('[data-fit]').forEach(x=>x.setAttribute("aria-pressed",x===b));eDraw();});
+$$('[data-bg]').forEach(b=>b.onclick=()=>{E.bg=b.dataset.bg;$$('[data-bg]').forEach(x=>x.setAttribute("aria-pressed",x===b));eDraw();});
 $("#bgColor").oninput=e=>{E.bgColor=e.target.value;E.bg="color";
   $$('[data-bg]').forEach(x=>x.setAttribute("aria-pressed",x.dataset.bg==="color"));eDraw();};
 $("#zoom").oninput=e=>{E.zoom=+e.target.value;$("#zoomVal").textContent=E.zoom.toFixed(2)+"×";eDraw();};
-$("#rotL").onclick=()=>{E.rot=(E.rot+270)%360;orient();pushHistory();draw();};
-$("#rotR").onclick=()=>{E.rot=(E.rot+90)%360;orient();pushHistory();draw();};
-$("#flipH").onclick=()=>{E.flip=!E.flip;orient();pushHistory();draw();};
+$("#rotL").onclick=()=>{E.rot=(E.rot+270)%360;orient();draw();};
+$("#rotR").onclick=()=>{E.rot=(E.rot+90)%360;orient();draw();};
+$("#flipH").onclick=()=>{E.flip=!E.flip;orient();draw();};
 function clearLook(){
   E.film=null; $("#amtGrp").hidden=true;
   document.querySelectorAll("#filmGroups .chip, #looks .chip").forEach(x=>x.setAttribute("aria-pressed","false"));
 }
-$("#cropOpen").onclick=cropStart;
-$("#cropApply").onclick=()=>cropEnd(true);
-$("#cropCancel").onclick=()=>cropEnd(false);
-$("#cropClear").onclick=()=>{E.crop=null;E.ratio="4:5";press($("#ratios"),"ratio","4:5");
-  $("#cropClear").hidden=true;pushHistory();eDraw();};
-$("#straight").oninput=e=>{E.straight=+e.target.value;$("#strVal").textContent=E.straight.toFixed(1)+"°";eDraw();};
-$("#straight").onchange=()=>pushHistory();
-$("#strZero").onclick=()=>{E.straight=0;$("#straight").value=0;$("#strVal").textContent="0.0°";pushHistory();eDraw();};
-const lockBox=$("#cropLocks");
-[["free","Free"],["1:1","1:1"],["4:5","4:5"],["9:16","9:16"],["3:4","3:4"]].forEach(([id,label])=>{
-  const b=document.createElement("button"); b.className="chip"; b.textContent=label; b.dataset.lock=id;
-  b.setAttribute("aria-pressed",id==="free");
-  b.onclick=()=>{
-    CROP.lock=id==="free"?null:id;
-    press(lockBox,"lock",id);
-    if(CROP.lock){
-      const r=RATIOS.find(x=>x.id===id), im=WORK();
-      const want=(r.w/r.h)*(im.height/im.width);
-      let w=CROP.rect.w, hh=w/want;
-      if(hh>1){hh=1;w=hh*want;}
-      CROP.rect.w=w; CROP.rect.h=hh;
-      CROP.rect.x=Math.min(CROP.rect.x,1-w); CROP.rect.y=Math.min(CROP.rect.y,1-hh);
-    }
-    eDraw();
-  };
-  lockBox.appendChild(b);
-});
-const slideBox=$("#slideChips");
-[1,2,3,4,5,6].forEach(n=>{
-  const b=document.createElement("button"); b.className="chip mono"; b.dataset.slides=String(n);
-  b.textContent=n===1?"Single":n+" slides";
-  b.setAttribute("aria-pressed",n===1);
-  b.onclick=()=>{E.slides=n;press(slideBox,"slides",String(n));
-    $("#saveBtn").textContent=n>1?"Save "+n+" slides":"Save image";pushHistory();eDraw();};
-  slideBox.appendChild(b);
-});
 $("#clearGrade").onclick=()=>{ADJ.forEach(a=>E.adj[a.k]=a.def);clearLook();pushAdj();eDraw();};
 $("#resetBtn").onclick=()=>{
   E.rot=0;E.flip=false;E.zoom=1;E.panX=0;E.panY=0;ADJ.forEach(a=>E.adj[a.k]=a.def);
-  E.crop=null;E.straight=0;E.slides=1;E.ratio="4:5";STRAIGHT_KEY=null;
-  $("#straight").value=0;$("#strVal").textContent="0.0°";$("#cropClear").hidden=true;
-  press($("#ratios"),"ratio","4:5");press($("#slideChips"),"slides","1");
-  $("#saveBtn").textContent="Save image";
   E.layers=[];E.sel=-1;clearLook();$("#zoom").value=1;$("#zoomVal").textContent="1.00×";
-  pushAdj();eRenderLayers();orient();pushHistory();eDraw();
+  pushAdj();eRenderLayers();orient();eDraw();
 };
 $("#addText").onclick=()=>{
   E.layers.push({text:"Your caption",x:.5,y:.86,size:7,color:"#ffffff",family:FONT.sans,weight:"700",align:"center",shadow:true});
-  E.sel=E.layers.length-1; eRenderLayers(); pushHistory(); eDraw();
+  E.sel=E.layers.length-1; eRenderLayers(); eDraw();
 };
 function eRenderLayers(){
   const box=$("#layers"); box.innerHTML="";
@@ -1533,7 +1240,7 @@ function eRenderLayers(){
       if(f==="size")el.parentElement.querySelector(".val").textContent=L.size;
       eDraw();
     }));
-    d.querySelector('[data-act=del]').onclick=()=>{E.layers.splice(i,1);E.sel=-1;eRenderLayers();pushHistory();eDraw();};
+    d.querySelector('[data-act=del]').onclick=()=>{E.layers.splice(i,1);E.sel=-1;eRenderLayers();eDraw();};
     box.appendChild(d);
   });
   if(!E.layers.length)box.innerHTML='<p class="hint">No text yet.</p>';
@@ -1575,7 +1282,7 @@ const palBox=$("#palettes");
 Object.entries(PALETTES).forEach(([name,p])=>{
   const b=document.createElement("button"); b.className="chip swatch"; b.title=name; b.dataset.pal=name;
   b.innerHTML=`<i style="background:${p.bg}"></i><i style="background:${p.accent}"></i><i style="background:${p.ink}"></i>`;
-  b.onclick=()=>{D.cols={...p};press(palBox,"pal",name);syncPalette();dDraw();pushHistory();};
+  b.onclick=()=>{D.cols={...p};press(palBox,"pal",name);syncPalette();dDraw();};
   palBox.appendChild(b);
 });
 function syncPalette(){
@@ -1596,11 +1303,11 @@ const dSliderBox=$("#dSliders");
 });
 $("#dAddText").onclick=()=>{
   D.layers.push(txt(.1,.45,.8,"New text",.05,{align:"left",color:"@ink",weight:"700"}));
-  D.sel=D.layers.length-1; dRenderLayers(); dDraw(); pushHistory(); gotoTab("dedit");
+  D.sel=D.layers.length-1; dRenderLayers(); dDraw(); gotoTab("dedit");
 };
 $("#dAddShape").onclick=()=>{
   D.layers.push(rect(.1,.4,.8,.12,"@accent"));
-  D.sel=D.layers.length-1; dRenderLayers(); dDraw(); pushHistory(); gotoTab("dedit");
+  D.sel=D.layers.length-1; dRenderLayers(); dDraw(); gotoTab("dedit");
 };
 function dRenderLayers(){
   const box=$("#dLayers"); box.innerHTML="";
@@ -1705,7 +1412,6 @@ let drag=null;
 const pts=new Map(); let pinch=null;
 function pdist(){const a=[...pts.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}
 function zoomTarget(){
-  if(MODE==="edit"&&CROP.on)return null;
   if(MODE==="edit")return {get:()=>E.zoom,set:z=>{E.zoom=Math.max(1,Math.min(4,z));
     $("#zoom").value=E.zoom;$("#zoomVal").textContent=E.zoom.toFixed(2)+"×";eDraw();}};
   const L=D.layers[D.sel];
@@ -1724,12 +1430,6 @@ function onDown(e){
     if(t){ pinch={d:pdist(),z:t.get(),t}; drag=null; return; }
   }
   const p=stagePoint(c,e);
-  if(MODE==="edit"&&CROP.on){
-    const hit=cropHandle(p.x,p.y,c.width,c.height);
-    if(hit) drag={m:"crop",hit,r0:{...CROP.rect},sx:p.x/c.width,sy:p.y/c.height};
-    else drag=null;
-    return;
-  }
   if(MODE==="edit"){
     for(let i=E.layers.length-1;i>=0;i--){
       const b=eBox(E.layers[i],c.width,c.height);
@@ -1763,29 +1463,6 @@ function onMove(e){
   if(pinch&&pts.size>=2){ const d=pdist(); if(pinch.d>4) pinch.t.set(pinch.z*d/pinch.d); return; }
   if(!drag)return;
   const c=activeCanvas(), p=stagePoint(c,e);
-  if(drag.m==="crop"){
-    const dx=p.x/c.width-drag.sx, dy=p.y/c.height-drag.sy, r0=drag.r0, R=CROP.rect;
-    const im=WORK(), ar=CROP.lock?(()=>{const q=RATIOS.find(x=>x.id===CROP.lock);
-      return (q.w/q.h)*(im.height/im.width);})():null;
-    const MIN=.06;
-    if(drag.hit.move){
-      R.x=Math.max(0,Math.min(1-r0.w,r0.x+dx));
-      R.y=Math.max(0,Math.min(1-r0.h,r0.y+dy));
-    } else {
-      let x0=r0.x, y0=r0.y, x1=r0.x+r0.w, y1=r0.y+r0.h;
-      if(drag.hit.cx===0)x0=Math.max(0,Math.min(x1-MIN,r0.x+dx)); else x1=Math.min(1,Math.max(x0+MIN,r0.x+r0.w+dx));
-      if(drag.hit.cy===0)y0=Math.max(0,Math.min(y1-MIN,r0.y+dy)); else y1=Math.min(1,Math.max(y0+MIN,r0.y+r0.h+dy));
-      let w=x1-x0, hh=y1-y0;
-      if(ar){
-        hh=w/ar;
-        if(drag.hit.cy===0){ if(y1-hh<0){hh=y1;w=hh*ar;} y0=y1-hh; if(drag.hit.cx===0)x0=x1-w; else x1=x0+w; }
-        else { if(y0+hh>1){hh=1-y0;w=hh*ar;} y1=y0+hh; if(drag.hit.cx===0)x0=x1-w; else x1=x0+w; }
-        x0=Math.max(0,x0); x1=Math.min(1,x1); w=x1-x0;
-      }
-      R.x=x0; R.y=y0; R.w=x1-x0; R.h=y1-y0;
-    }
-    eDraw(); return;
-  }
   if(drag.m==="epan"){
     const lim=1.2;
     E.panX=Math.max(-lim,Math.min(lim,drag.px+(e.clientX-drag.sx)/drag.w));
@@ -1811,7 +1488,7 @@ function onMove(e){
 function onUp(e){
   if(e&&e.pointerId!==undefined) pts.delete(e.pointerId);
   if(pts.size<2) pinch=null;
-  if(drag){pushHistory();activeCanvas().classList.remove("dragging");drag=null;}
+  if(drag){activeCanvas().classList.remove("dragging");drag=null;}
 }
 [frame,designC].forEach(c=>{
   c.addEventListener("pointerdown",onDown);
@@ -1852,7 +1529,7 @@ async function runSave(btn,make,name,fmt,q,noteEl){
   const label=btn.textContent;
   btn.disabled=true; btn.textContent="Working…"; noteEl.textContent="";
   await new Promise(r=>setTimeout(r,16));
-  try{ await deliver(make(),name,fmt,q,noteEl,MODE==="edit"?E.slides:1); }
+  try{ await deliver(make(),name,fmt,q,noteEl); }
   catch(err){ noteEl.textContent="That size was too big for this browser — try 2048 px."; }
   btn.disabled=false; btn.textContent=label;
 }
@@ -1862,75 +1539,6 @@ $("#shareBtn").onclick=()=>{ if(!ORIENT){$("#saveNote").textContent="Load a phot
   runSave($("#shareBtn"),eExport,$("#fname").value||"post",E.fmt,E.q/100,$("#saveNote")); };
 $("#dSaveBtn").onclick=()=>runSave($("#dSaveBtn"),dExport,$("#dfname").value||"design",D.fmt,D.q/100,$("#dNote"));
 $("#dShareBtn").onclick=()=>runSave($("#dShareBtn"),dExport,$("#dfname").value||"design",D.fmt,D.q/100,$("#dNote"));
-
-/* ============================================================ undo / redo */
-const HIST={edit:{s:[],i:-1},design:{s:[],i:-1}};
-let restoring=false;
-function snapshot(){
-  if(MODE==="edit")return JSON.stringify({
-    ratio:E.ratio,fit:E.fit,bg:E.bg,bgColor:E.bgColor,zoom:E.zoom,panX:E.panX,panY:E.panY,
-    adj:E.adj,layers:E.layers,film:E.film?E.film.id:null,filmAmt:E.filmAmt,
-    crop:E.crop,straight:E.straight,slides:E.slides,rot:E.rot,flip:E.flip,size:E.size});
-  return JSON.stringify({tpl:D.tpl,cols:D.cols,layers:D.layers,adj:D.adj,size:D.size,sel:D.sel});
-}
-function pushHistory(){
-  if(restoring)return;
-  const H=HIST[MODE], s=snapshot();
-  if(H.s[H.i]===s)return;
-  H.s=H.s.slice(0,H.i+1); H.s.push(s);
-  if(H.s.length>50)H.s.shift();
-  H.i=H.s.length-1; updateHistBtns();
-}
-function updateHistBtns(){
-  const H=HIST[MODE];
-  $("#undoBtn").disabled=H.i<=0;
-  $("#redoBtn").disabled=H.i>=H.s.length-1;
-}
-function restore(json){
-  restoring=true;
-  const s=JSON.parse(json);
-  if(MODE==="edit"){
-    Object.assign(E,{ratio:s.ratio,fit:s.fit,bg:s.bg,bgColor:s.bgColor,zoom:s.zoom,panX:s.panX,panY:s.panY,
-      adj:s.adj,layers:s.layers,filmAmt:s.filmAmt,crop:s.crop,straight:s.straight,slides:s.slides,
-      rot:s.rot,flip:s.flip,size:s.size});
-    E.film=s.film?FILM.find(f=>f.id===s.film)||null:null;
-    orient();
-    pushAdj();
-    press($("#ratios"),"ratio",E.ratio);
-    press($("#sizes"),"size",String(E.size));
-    press($("#slideChips"),"slides",String(E.slides));
-    $$('[data-fit]').forEach(x=>x.setAttribute("aria-pressed",x.dataset.fit===E.fit));
-    $$('[data-bg]').forEach(x=>x.setAttribute("aria-pressed",x.dataset.bg===E.bg));
-    $("#bgColor").value=E.bgColor;
-    $("#zoom").value=E.zoom; $("#zoomVal").textContent=E.zoom.toFixed(2)+"×";
-    $("#straight").value=E.straight; $("#strVal").textContent=E.straight.toFixed(1)+"°";
-    $("#cropClear").hidden=!E.crop;
-    $("#filmAmt").value=E.filmAmt; $("#amtVal").textContent=E.filmAmt;
-    $("#amtGrp").hidden=!E.film;
-    document.querySelectorAll("#filmGroups .chip").forEach(x=>
-      x.setAttribute("aria-pressed", !!(E.film&&x.textContent===E.film.n)));
-    $("#saveBtn").textContent=E.slides>1?"Save "+E.slides+" slides":"Save image";
-    eRenderLayers(); eDraw();
-  } else {
-    D.tpl=s.tpl; D.cols=s.cols; D.layers=s.layers; D.adj=s.adj; D.size=s.size; D.sel=s.sel;
-    syncPalette(); press($("#dsizes"),"size",String(D.size));
-    Object.keys(D.adj).forEach(k=>{const el=$("#dv_"+k); if(el)el.textContent=D.adj[k];});
-    dRenderLayers(); dDraw();
-  }
-  restoring=false; updateHistBtns();
-}
-function undo(){ const H=HIST[MODE]; if(H.i>0){H.i--;restore(H.s[H.i]);} }
-function redo(){ const H=HIST[MODE]; if(H.i<H.s.length-1){H.i++;restore(H.s[H.i]);} }
-$("#undoBtn").onclick=undo; $("#redoBtn").onclick=redo;
-document.addEventListener("keydown",e=>{
-  if(!(e.metaKey||e.ctrlKey))return;
-  const k=e.key.toLowerCase();
-  if(k==="z"&&!e.shiftKey){e.preventDefault();undo();}
-  else if((k==="z"&&e.shiftKey)||k==="y"){e.preventDefault();redo();}
-});
-// every slider commits one history entry on release, not per pixel of travel
-document.querySelectorAll('#sliders input,#dSliders input,#filmAmt,#zoom,#quality,#dquality')
-  .forEach(el=>el.addEventListener("change",()=>pushHistory()));
 
 /* ============================================================ modes, tabs, sheet */
 function gotoTab(name){
@@ -1953,7 +1561,7 @@ $$('#modeSeg button').forEach(b=>b.onclick=()=>{
     if(!ORIENT){$("#dropzone").hidden=false;$("#lighttable").hidden=true;$("#readout").hidden=true;}
     gotoTab("frame");
   }
-  updateHistBtns(); draw();
+  draw();
 });
 $("#grip").onclick=()=>{
   const s=$("#sheet");
