@@ -31,8 +31,7 @@ body{
 button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 button{touch-action:manipulation}
 
-.app{display:flex;flex-direction:column;height:100dvh;padding-top:var(--sat);
-  padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+.app{display:flex;flex-direction:column;height:100dvh;padding-top:var(--sat)}
 header{
   display:flex;align-items:center;gap:12px;padding:10px 14px;
   border-bottom:1px solid var(--line);flex:none;
@@ -72,14 +71,13 @@ aside{
 .panel.on{display:block}
 .sheetgrip{display:none}
 
-@media (max-width:860px) and (orientation:portrait){
+@media (max-width:860px){
   main{flex-direction:column}
   .stage{padding:10px;flex:1}
   aside{
     width:auto;border-left:0;border-top:1px solid var(--line);
-    height:44dvh;min-height:190px;
+    height:44vh;min-height:200px;
   }
-  aside.tall{height:74dvh}
   aside.min{height:auto}
   aside.min .panels{display:none}
   .sheetgrip{
@@ -91,27 +89,6 @@ aside{
   header{padding:8px 12px}
   .wordmark{font-size:11px;letter-spacing:.22em}
 }
-
-/* phone held sideways, or any short viewport: go back to two columns so the
-   controls get full height and scroll on their own */
-@media (max-height:560px){
-  main{flex-direction:row}
-  .stage{padding:8px;flex:1;min-width:0}
-  aside{
-    width:min(46vw,320px);flex:none;height:auto;min-height:0;
-    border-left:1px solid var(--line);border-top:0;
-  }
-  aside.min,aside.tall{height:auto}
-  aside.min .panels{display:block}
-  .sheetgrip{display:none}
-  header{padding:5px 10px}
-  .wordmark{display:none}
-  .tabs button{padding:9px 10px;min-height:38px;font-size:10px}
-  .panels{padding:10px 10px calc(16px + var(--sab))}
-  .grp{margin-bottom:14px}
-  .readout{display:none}
-}
-@media (max-height:420px){ aside{width:min(52vw,300px)} }
 
 /* stage */
 .lighttable{position:relative;display:flex;align-items:center;justify-content:center;max-height:100%}
@@ -303,7 +280,6 @@ input[type=color]{width:100%;height:38px;padding:2px;background:#191315;border:1
           <div class="row"><span class="name">JPG quality</span><span class="val" id="qVal">92</span></div>
           <input type="range" id="quality" min="60" max="100" step="1" value="92"></div></div>
         <div class="grp"><label for="fname">File name</label><input type="text" id="fname" value="post"></div>
-        <p class="note" id="eOut"></p>
         <button class="btn go wide" id="saveBtn">Save image</button>
         <button class="btn wide sm" id="shareBtn" style="margin-top:8px">Share / save to Photos</button>
         <p class="note" id="saveNote"></p>
@@ -343,10 +319,6 @@ input[type=color]{width:100%;height:38px;padding:2px;background:#191315;border:1
             <button class="chip" data-dfmt="png" aria-pressed="false">PNG</button>
           </div></div>
         <div class="grp"><label for="dfname">File name</label><input type="text" id="dfname" value="design"></div>
-        <div class="grp"><div class="slider">
-          <div class="row"><span class="name">JPG quality</span><span class="val" id="dqVal">92</span></div>
-          <input type="range" id="dquality" min="60" max="100" step="1" value="92"></div></div>
-        <p class="note" id="dOut"></p>
         <button class="btn go wide" id="dSaveBtn">Save image</button>
         <button class="btn wide sm" id="dShareBtn" style="margin-top:8px">Share / save to Photos</button>
         <p class="note" id="dNote"></p>
@@ -406,56 +378,6 @@ function coverDraw(g,img,x,y,w,h,zoom,px,py,fstr){
   g.drawImage(img, x+w/2-dw/2+(px||0)*w, y+h/2-dh/2+(py||0)*h, dw, dh);
   g.filter="none";
 }
-let MAXAREA=null;
-function maxCanvasArea(){
-  if(MAXAREA)return MAXAREA;
-  // browsers cap canvas area (iOS Safari is the strictest); find the real ceiling once
-  const tries=[268435456,134217728,67108864,33554432,16777216,8388608];
-  for(const area of tries){
-    const s=Math.floor(Math.sqrt(area));
-    try{
-      const c=document.createElement("canvas"); c.width=s; c.height=s;
-      const g=c.getContext("2d");
-      g.fillStyle="#ff0000"; g.fillRect(s-2,s-2,2,2);
-      const d=g.getImageData(s-1,s-1,1,1).data;
-      c.width=c.height=1;
-      if(d[0]>200){ MAXAREA=area; return area; }
-    }catch(e){}
-  }
-  MAXAREA=8388608; return MAXAREA;
-}
-function capDims(w,h){
-  const area=maxCanvasArea(), maxSide=8192;
-  let s=Math.min(1,Math.sqrt(area/(w*h)),maxSide/Math.max(w,h));
-  return {w:Math.max(64,Math.round(w*s)),h:Math.max(64,Math.round(h*s))};
-}
-function eNativeLong(){
-  if(!ORIENT)return 1080;
-  const r=RATIOS.find(r=>r.id===E.ratio);
-  let aw=r.w||1, ah=r.h||1;
-  if(r.id==="orig"){aw=ORIENT.width;ah=ORIENT.height;}
-  const ar=aw/ah, iw=ORIENT.width, ih=ORIENT.height;
-  // frame width at which the photo is sampled 1:1 from the source
-  const need = E.fit==="fill" ? Math.max(1/iw, 1/(ar*ih)) : Math.min(1/iw, 1/(ar*ih));
-  let W=1/(E.zoom*need), H=W/ar;
-  const c=capDims(W,H);
-  return Math.max(1080,c.w,c.h);
-}
-function dNativeLong(){
-  const [a,b]=dRatio().split(":").map(Number), ar=a/b;
-  let X=0;
-  D.layers.forEach(L=>{
-    if(L.t!=="photo")return;
-    const im=slotImg(L); if(!im)return;
-    const need=Math.max(L.w/im.width, L.h/(ar*im.height));
-    X=Math.max(X, 1/((L.zoom||1)*need));
-  });
-  if(!X)return 1080;
-  const c=capDims(X,X/ar);
-  return Math.max(1080,c.w,c.h);
-}
-function eLong(){ return E.size==="max" ? eNativeLong() : E.size; }
-function dLong(){ return D.size==="max" ? dNativeLong() : D.size; }
 async function toBlob(c,fmt,q){return new Promise(r=>c.toBlob(r,fmt==="png"?"image/png":"image/jpeg",q));}
 async function deliver(canvas,name,fmt,q,noteEl){
   const blob=await toBlob(canvas,fmt,q);
@@ -1089,18 +1011,13 @@ function fitCanvas(c,t){
 }
 function eDraw(){
   if(!ORIENT)return;
-  const t=eDims(eLong()); fitCanvas(frame,t); eRender(frame,frame.width,frame.height);
+  const t=eDims(E.size); fitCanvas(frame,t); eRender(frame,frame.width,frame.height);
   $("#readout").innerHTML=`frame <b>${t.w}×${t.h}</b> · source <b>${ORIENT.width}×${ORIENT.height}</b> · zoom <b>${E.zoom.toFixed(2)}×</b>`;
-  const px=(t.w*t.h/1e6).toFixed(1);
-  $("#eOut").textContent=`Output ${t.w} × ${t.h} (${px} MP) · source ${ORIENT.width} × ${ORIENT.height}`
-    +(E.size==="max"?" · sampled 1:1 from the original":"");
 }
 function dDraw(){
-  const t=dDims(dLong()); fitCanvas(designC,t); dRender(designC,designC.width,designC.height);
+  const t=dDims(D.size); fitCanvas(designC,t); dRender(designC,designC.width,designC.height);
   const T=TEMPLATES[D.tpl];
   $("#readout").innerHTML=`${T.n} · <b>${t.w}×${t.h}</b> · ${D.layers.length} layers${ORIENT?"":' · <b>no photo yet</b>'}`;
-  $("#dOut").textContent=`Output ${t.w} × ${t.h} (${(t.w*t.h/1e6).toFixed(1)} MP)`
-    +(D.size==="max"?" · sized to the sharpest photo in the layout":"");
 }
 function draw(){ MODE==="edit"?eDraw():dDraw(); }
 
@@ -1180,10 +1097,10 @@ $("#filmAmt").oninput=e=>{E.filmAmt=+e.target.value;$("#amtVal").textContent=e.t
 
 [["#sizes",v=>{E.size=v;eDraw();},()=>E.size],["#dsizes",v=>{D.size=v;dDraw();},()=>D.size]].forEach(([sel,set,get])=>{
   const box=$(sel);
-  [[1080,"1080 px"],[1350,"1350 px"],[2048,"2048 px"],["max","Full quality"]].forEach(([v,label])=>{
-    const b=document.createElement("button"); b.className="chip mono"; b.textContent=label; b.dataset.size=String(v);
-    b.setAttribute("aria-pressed",v===get());
-    b.onclick=()=>{set(v);press(box,"size",String(v));};
+  [1080,1350,1440,2048].forEach(px=>{
+    const b=document.createElement("button"); b.className="chip mono"; b.textContent=px+" px"; b.dataset.size=px;
+    b.setAttribute("aria-pressed",px===get());
+    b.onclick=()=>{set(px);press(box,"size",String(px));};
     box.appendChild(b);
   });
 });
@@ -1511,34 +1428,23 @@ $$('[data-fmt]').forEach(b=>b.onclick=()=>{E.fmt=b.dataset.fmt;
   $$('[data-fmt]').forEach(x=>x.setAttribute("aria-pressed",x===b));
   $("#qGrp").style.display=E.fmt==="jpeg"?"":"none";});
 $("#quality").oninput=e=>{E.q=+e.target.value;$("#qVal").textContent=e.target.value;};
-D.q=92;
-$("#dquality").oninput=e=>{D.q=+e.target.value;$("#dqVal").textContent=e.target.value;};
 $$('[data-dfmt]').forEach(b=>b.onclick=()=>{D.fmt=b.dataset.dfmt;
   $$('[data-dfmt]').forEach(x=>x.setAttribute("aria-pressed",x===b));});
 
 function eExport(){
-  const t=eDims(eLong()), c=document.createElement("canvas"); c.width=t.w;c.height=t.h;
+  const t=eDims(E.size), c=document.createElement("canvas"); c.width=t.w;c.height=t.h;
   if(E.fmt==="jpeg"){const g=c.getContext("2d");g.fillStyle="#000";g.fillRect(0,0,t.w,t.h);}
   eRender(c,t.w,t.h); return c;
 }
 function dExport(){
-  const t=dDims(dLong()), c=document.createElement("canvas"); c.width=t.w;c.height=t.h;
+  const t=dDims(D.size), c=document.createElement("canvas"); c.width=t.w;c.height=t.h;
   dRender(c,t.w,t.h); return c;
 }
-async function runSave(btn,make,name,fmt,q,noteEl){
-  const label=btn.textContent;
-  btn.disabled=true; btn.textContent="Working…"; noteEl.textContent="";
-  await new Promise(r=>setTimeout(r,16));
-  try{ await deliver(make(),name,fmt,q,noteEl); }
-  catch(err){ noteEl.textContent="That size was too big for this browser — try 2048 px."; }
-  btn.disabled=false; btn.textContent=label;
-}
 $("#saveBtn").onclick=()=>{ if(!ORIENT){$("#saveNote").textContent="Load a photo first.";return;}
-  runSave($("#saveBtn"),eExport,$("#fname").value||"post",E.fmt,E.q/100,$("#saveNote")); };
-$("#shareBtn").onclick=()=>{ if(!ORIENT){$("#saveNote").textContent="Load a photo first.";return;}
-  runSave($("#shareBtn"),eExport,$("#fname").value||"post",E.fmt,E.q/100,$("#saveNote")); };
-$("#dSaveBtn").onclick=()=>runSave($("#dSaveBtn"),dExport,$("#dfname").value||"design",D.fmt,D.q/100,$("#dNote"));
-$("#dShareBtn").onclick=()=>runSave($("#dShareBtn"),dExport,$("#dfname").value||"design",D.fmt,D.q/100,$("#dNote"));
+  deliver(eExport(),$("#fname").value||"post",E.fmt,E.q/100,$("#saveNote")); };
+$("#shareBtn").onclick=$("#saveBtn").onclick;
+$("#dSaveBtn").onclick=()=>deliver(dExport(),$("#dfname").value||"design",D.fmt,.92,$("#dNote"));
+$("#dShareBtn").onclick=$("#dSaveBtn").onclick;
 
 /* ============================================================ modes, tabs, sheet */
 function gotoTab(name){
@@ -1563,13 +1469,7 @@ $$('#modeSeg button').forEach(b=>b.onclick=()=>{
   }
   draw();
 });
-$("#grip").onclick=()=>{
-  const s=$("#sheet");
-  if(s.classList.contains("min")){s.classList.remove("min");s.classList.remove("tall");}
-  else if(s.classList.contains("tall")){s.classList.add("min");s.classList.remove("tall");}
-  else s.classList.add("tall");
-  setTimeout(draw,220);
-};
+$("#grip").onclick=()=>$("#sheet").classList.toggle("min");
 
 function pickPhoto(slot){ pendingSlot=slot; $("#fileInput").click(); }
 function loadSlot(slot,file){
@@ -1595,8 +1495,7 @@ document.addEventListener("paste",e=>{
 });
 document.addEventListener("gesturestart",e=>e.preventDefault());
 let rt; window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(draw,120);});
-window.addEventListener("orientationchange",()=>{setTimeout(draw,120);setTimeout(draw,420);});
-if(window.visualViewport) visualViewport.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(draw,150);});
+window.addEventListener("orientationchange",()=>setTimeout(draw,300));
 
 /* boot */
 const first=Math.max(0,TEMPLATES.findIndex(t=>t.c===D.cat));
