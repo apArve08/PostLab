@@ -429,6 +429,7 @@ const HAS_FILTER=(()=>{
   }catch(e){ return false; }
 })();
 // bounce through a small canvas: a usable blur where ctx.filter is missing
+//test
 function blurDraw(g,img,dx,dy,dw,dh,px){
   const k=Math.max(2,Math.min(60,Math.round(px*1.5)));
   const tw=Math.max(2,Math.round(Math.abs(dw)/k)), th=Math.max(2,Math.round(Math.abs(dh)/k));
